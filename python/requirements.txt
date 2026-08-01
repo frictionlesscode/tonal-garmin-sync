@@ -1,0 +1,12 @@
+# Garmin Connect auth + upload.
+#
+# Pinned deliberately. Everything about Garmin's current auth — the Cloudflare
+# WAF workaround, MFA support, and the DI token-store format this project reads —
+# depends on garminconnect's widget+cffi login strategy, introduced in 0.3.2.
+# Leaving it unpinned means an upstream change can break every user's build at
+# once, with no obvious cause. Bump this on purpose, after testing a real login.
+#
+# Known-good transitive versions at the time of pinning (installed automatically;
+# listed here so you can reproduce the exact environment if a bump goes wrong):
+#   curl_cffi 0.15.0, cffi 2.0.0, requests 2.34.2
+garminconnect==0.3.2

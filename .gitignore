@@ -1,0 +1,14 @@
+node_modules/
+
+# Credentials — never commit these.
+.env
+.env.local
+
+# Persistent state: your sync log (workout names + timestamps), movement cache,
+# and Garmin tokens. The token store is equivalent to a logged-in session.
+data/
+
+# Generated / personal exports.
+*.fit
+*.log
+tonal-movements.json

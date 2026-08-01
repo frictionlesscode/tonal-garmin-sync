@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+
+      # The service talks to two APIs that CI can't reach, so there's nothing to
+      # run end-to-end. What CI can prove is that the image builds and the
+      # bundled movement map is valid — the two things most likely to be broken
+      # by a careless commit.
+      - name: Build the Docker image
+        run: docker build -t tonal-garmin-sync:ci .
+
+      - name: Validate bundled config
+        run: |
+          node -e "
+            const map = require('./config/movement-map.json');
+            const curated = require('./config/curated.json');
+            const names = require('./config/fit-exercises.json');
+            const valid = new Set(Object.values(names).flat());
+            const ids = Object.keys(map);
+            if (ids.length === 0) throw new Error('movement-map.json is empty');
+
+            const bad = ids.filter(id => {
+              const m = map[id];
+              return !m.name
+                || typeof m.onMachine !== 'boolean'
+                || (m.category && !valid.has(m.exerciseName));
+            });
+            if (bad.length) {
+              throw new Error('invalid movement-map entries: ' + bad.slice(0, 10).join(', '));
+            }
+
+            const dupes = curated.map(r => r.movementId)
+              .filter((id, i, a) => a.indexOf(id) !== i);
+            if (dupes.length) {
+              throw new Error('duplicate movementIds in curated.json: ' + dupes.join(', '));
+            }
+
+            console.log(ids.length + ' movements mapped, ' + curated.length + ' curated rows — OK');
+          "
+
+      - name: Check no secrets are committed
+        run: |
+          if git ls-files | grep -Ex '\.env|data/.*'; then
+            echo "::error::credential files are tracked by git"
+            exit 1
+          fi
+          echo "no credential files tracked — OK"

@@ -1,0 +1,34 @@
+{
+  "name": "tonal-garmin-sync",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sync completed Tonal workouts into Garmin Connect as strength activities with per-set reps, weights and heart rate.",
+  "license": "MIT",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "verify": "tsx scripts/verify-tonal.ts",
+    "bootstrap:garmin": "tsx scripts/garmin-bootstrap.ts",
+    "sync:once": "tsx scripts/sync-once.ts",
+    "backfill": "tsx scripts/backfill.ts",
+    "inspect:fit": "tsx scripts/inspect-fit.ts",
+    "check:hr": "tsx scripts/check-hr.ts",
+    "dump:catalog": "tsx scripts/dump-catalog.ts",
+    "build:curated": "tsx scripts/build-from-curated.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dlwiest/ts-tonal-client": "^0.2.1",
+    "@garmin/fitsdk": "^21.141.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,7 @@
+# Keep line endings deterministic. Everything here runs on Linux (the container),
+# so LF in the repository regardless of who commits from where.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.fit binary
