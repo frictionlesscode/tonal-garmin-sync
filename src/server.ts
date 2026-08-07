@@ -31,20 +31,22 @@ app.post('/sync', async (request, reply) => {
     return reply.code(401).send({ error: 'unauthorized' });
   }
 
+  // Log the detail, never return it: exception text can carry filesystem paths
+  // or raw upstream API responses. The container log is the place for that.
+  const failed = { error: 'sync failed', hint: 'see the service logs for details' };
+
   try {
     const result = await service.runSync();
     // A batch tolerates one bad activity, but this route syncs exactly one — so
     // a failure here is the whole request failing, and shouldn't look like a 200.
     if (result.status === 'failed') {
       request.log.error({ result }, 'sync failed');
-      return reply.code(500).send({ error: 'sync failed', hint: 'see the service logs for details' });
+      return reply.code(500).send(failed);
     }
     return reply.code(200).send(result);
   } catch (err) {
-    // Log the detail, don't return it: exception text can carry filesystem paths
-    // or raw upstream API responses. The container log is the place for that.
     request.log.error(err);
-    return reply.code(500).send({ error: 'sync failed', hint: 'see the service logs for details' });
+    return reply.code(500).send(failed);
   }
 });
 

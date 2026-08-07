@@ -6,13 +6,7 @@ import { Store } from './store.js';
 import { encodeFit, normalizeWorkout } from './fit.js';
 import type { TonalActivitySummaryLoose } from './types.js';
 
-export type SyncStatus =
-  | 'synced'
-  | 'duplicate'
-  | 'skipped'
-  | 'no-activity'
-  | 'would-sync'
-  | 'failed';
+export type SyncStatus = 'synced' | 'duplicate' | 'skipped' | 'no-activity' | 'would-sync' | 'failed';
 
 export interface SyncResult {
   status: SyncStatus;
@@ -139,6 +133,7 @@ export class SyncService {
       // because it was deleted, or because it turned out to have no per-set
       // detail. Record it and keep going.
       let result: SyncResult;
+      let fatal: unknown;
       try {
         result = await this.syncActivity(summary, options);
       } catch (err) {
@@ -148,16 +143,13 @@ export class SyncService {
           : ((err as Error)?.message ?? String(err));
         console.warn(`[sync] activity ${activityId} failed — skipping: ${reason}`);
         result = { status: 'failed', activityId, name: String(summary.name ?? ''), error: reason };
-        // An unusable session is not a per-activity problem: stop the batch
-        // rather than hammer Tonal with calls that will all fail the same way.
-        if (isAuthFailure(err)) {
-          results.push(result);
-          options.onResult?.(result, summary);
-          throw err;
-        }
+        // An unusable session is not a per-activity problem: every remaining
+        // call would fail the same way. Report this one, then stop.
+        if (isAuthFailure(err)) fatal = err;
       }
       results.push(result);
       options.onResult?.(result, summary);
+      if (fatal) throw fatal;
     }
     return results;
   }

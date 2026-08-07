@@ -36,12 +36,9 @@ async function main() {
   const print = (result: SyncResult, summary: TonalActivitySummaryLoose): void => {
     const when = String(summary.timestamp ?? summary.localTimestamp ?? '').slice(0, 16);
     const name = result.name ?? String(summary.name ?? '');
-    const detail =
-      result.error !== undefined
-        ? `  — ${result.error}`
-        : result.setCount !== undefined
-          ? `  (${result.setCount} sets)`
-          : '';
+    const detail = result.error
+      ? `  — ${result.error}`
+      : result.setCount !== undefined ? `  (${result.setCount} sets)` : '';
     console.log(`  ${LABELS[result.status].padEnd(11)} ${when}  ${name}${detail}`);
   };
 
