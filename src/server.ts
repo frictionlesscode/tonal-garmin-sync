@@ -33,6 +33,12 @@ app.post('/sync', async (request, reply) => {
 
   try {
     const result = await service.runSync();
+    // A batch tolerates one bad activity, but this route syncs exactly one — so
+    // a failure here is the whole request failing, and shouldn't look like a 200.
+    if (result.status === 'failed') {
+      request.log.error({ result }, 'sync failed');
+      return reply.code(500).send({ error: 'sync failed', hint: 'see the service logs for details' });
+    }
     return reply.code(200).send(result);
   } catch (err) {
     // Log the detail, don't return it: exception text can carry filesystem paths

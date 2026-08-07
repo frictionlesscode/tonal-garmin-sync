@@ -65,15 +65,18 @@ export class Tonal {
   }
 
   /**
-   * The last `count` *completed* activity summaries, oldest first.
+   * The last `count` *completed, syncable* activity summaries, oldest first.
    *
    * Oldest-first matters: when a single pass syncs several workouts, they should
    * reach Garmin in the order they actually happened.
+   *
+   * Activities without per-set detail are filtered out here rather than left to
+   * fail later — see `isSyncable`.
    */
   async getRecentCompletedActivities(count: number): Promise<TonalActivitySummaryLoose[]> {
     const summaries = await this.getActivitySummaries();
     return summaries
-      .filter((s) => s.completed !== false)
+      .filter((s) => s.completed !== false && isSyncable(s))
       .sort((a, b) => tsOf(a) - tsOf(b))
       .slice(-Math.max(1, count));
   }
@@ -86,6 +89,41 @@ export class Tonal {
     const recent = await this.getRecentCompletedActivities(1);
     return recent[recent.length - 1];
   }
+}
+
+/**
+ * Whether an activity is one we can actually fetch per-set detail for.
+ *
+ * Two kinds of entry in the feed look completed but have no workout behind them,
+ * and 404 on the detail endpoint:
+ *
+ *  - **External activities.** Tonal's Apple Health integration imports outside
+ *    workouts (runs, rides) into the same feed, marked `activityType: "External"`.
+ *  - **Deleted activities**, which keep appearing with `deletedAt` set.
+ *
+ * A missing `activityType` counts as syncable: the field is only meaningful when
+ * present, and treating absence as "skip" would silently sync nothing at all if
+ * Tonal ever stopped sending it.
+ */
+export function isSyncable(summary: TonalActivitySummaryLoose): boolean {
+  if (summary.deletedAt) return false;
+  return summary.activityType === undefined || summary.activityType === 'Internal';
+}
+
+/** True for a Tonal API error carrying the given HTTP status. */
+export function isHttpStatus(err: unknown, status: number): boolean {
+  return typeof err === 'object' && err !== null && (err as { statusCode?: unknown }).statusCode === status;
+}
+
+/**
+ * Whether an error means "this session is no longer usable", as opposed to
+ * "this one request failed". Only the former justifies throwing the cached
+ * client away and logging in again.
+ */
+export function isAuthFailure(err: unknown): boolean {
+  if (isHttpStatus(err, 401) || isHttpStatus(err, 403)) return true;
+  const msg = err instanceof Error ? err.message.toLowerCase() : '';
+  return msg.includes('authenticate') || msg.includes('token expired');
 }
 
 /**

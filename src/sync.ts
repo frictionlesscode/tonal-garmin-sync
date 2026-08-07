@@ -1,18 +1,26 @@
 import type { Config } from './config.js';
-import { Tonal, activityIdOf } from './tonal.js';
+import { Tonal, activityIdOf, isAuthFailure, isHttpStatus } from './tonal.js';
 import { Movements } from './movements.js';
 import { Garmin } from './garmin.js';
 import { Store } from './store.js';
 import { encodeFit, normalizeWorkout } from './fit.js';
 import type { TonalActivitySummaryLoose } from './types.js';
 
-export type SyncStatus = 'synced' | 'duplicate' | 'skipped' | 'no-activity' | 'would-sync';
+export type SyncStatus =
+  | 'synced'
+  | 'duplicate'
+  | 'skipped'
+  | 'no-activity'
+  | 'would-sync'
+  | 'failed';
 
 export interface SyncResult {
   status: SyncStatus;
   activityId?: string;
   name?: string;
   setCount?: number;
+  /** Why this activity failed, when status is "failed". */
+  error?: string;
 }
 
 export interface SyncRecentOptions {
@@ -98,12 +106,18 @@ export class SyncService {
     this.movements = undefined;
   }
 
-  /** Run a Tonal call, discarding the cached client on failure so the next attempt reconnects. */
+  /**
+   * Run a Tonal call, discarding the cached client only if the *session* died.
+   *
+   * Not every failure means the login is bad: a 404 for one activity says
+   * nothing about the session, and throwing the client away for those would
+   * force a pointless re-login on every skipped activity.
+   */
   private async callTonal<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (err) {
-      this.dropTonalClient();
+      if (isAuthFailure(err)) this.dropTonalClient();
       throw err;
     }
   }
@@ -120,7 +134,28 @@ export class SyncService {
 
     const results: SyncResult[] = [];
     for (const summary of summaries) {
-      const result = await this.syncActivity(summary, options);
+      // One bad activity must not abandon the rest of the batch. A workout can
+      // fail for reasons that say nothing about the others — most often a 404
+      // because it was deleted, or because it turned out to have no per-set
+      // detail. Record it and keep going.
+      let result: SyncResult;
+      try {
+        result = await this.syncActivity(summary, options);
+      } catch (err) {
+        const activityId = activityIdOf(summary);
+        const reason = isHttpStatus(err, 404)
+          ? 'no per-set detail available (deleted, or not a Tonal workout)'
+          : ((err as Error)?.message ?? String(err));
+        console.warn(`[sync] activity ${activityId} failed — skipping: ${reason}`);
+        result = { status: 'failed', activityId, name: String(summary.name ?? ''), error: reason };
+        // An unusable session is not a per-activity problem: stop the batch
+        // rather than hammer Tonal with calls that will all fail the same way.
+        if (isAuthFailure(err)) {
+          results.push(result);
+          options.onResult?.(result, summary);
+          throw err;
+        }
+      }
       results.push(result);
       options.onResult?.(result, summary);
     }

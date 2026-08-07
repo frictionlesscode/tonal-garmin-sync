@@ -53,11 +53,17 @@ works for you works for everyone. See [docs/movement-map.md](docs/movement-map.m
 ```bash
 npm install
 npm run typecheck        # must pass
+npm run selftest         # must pass — no network or credentials needed
 docker compose build     # must succeed
 ```
 
-There's no test suite — the project is mostly I/O against two APIs that can't be
-hit from CI. In place of tests, verify by hand and say what you did:
+`npm run selftest` covers the activity-feed edge cases that only exist on some
+accounts (Apple Health imports, deleted activities, a 404 partway through a
+batch). If you fix a bug that depended on account-specific data, adding a case
+there is the best way to keep it fixed.
+
+Beyond that there's no full test suite — the project is mostly I/O against two
+APIs that can't be reached from CI. So also verify by hand, and say what you did:
 
 - `npm run inspect:fit` builds and decodes a real FIT file without uploading.
   That's the safest way to check anything touching `fit.ts` or `movements.ts`.

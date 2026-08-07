@@ -36,6 +36,26 @@ The `x-webhook-secret` header doesn't match `WEBHOOK_SECRET`. Watch for trailing
 whitespace, mismatched quotes in `secrets.yaml`, and forgetting to restart the
 service after changing `.env`.
 
+### A workout is skipped with "no per-set detail available"
+
+Two kinds of entry in the Tonal feed look like completed workouts but have no
+sets behind them, and return 404 if you ask for their detail:
+
+- **Activities imported from Apple Health.** If you let Tonal read from Apple
+  Health, your runs and rides appear in the same feed, flagged
+  `activityType: "External"`. They were never Tonal workouts, so there is
+  nothing to sync — and you almost certainly don't want them going to Garmin
+  twice anyway.
+- **Deleted activities**, which keep appearing with `deletedAt` set.
+
+The service filters both out before syncing, and anything that still slips
+through is logged and skipped without stopping the rest of the batch. This is
+working as intended, not an error.
+
+If you'd rather they weren't in your Tonal feed at all: turn off the other app's
+write access in iOS **Health → Sharing → Apps**, and delete the imported entries
+in the Tonal app.
+
 ### `Token expired and refresh failed. Call authenticate() first.`
 
 The Tonal client's internal session token failed to refresh itself, usually

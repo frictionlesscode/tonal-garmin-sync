@@ -20,6 +20,14 @@ export interface TonalActivitySummaryLoose {
   workoutId?: string;
   name?: string;
   completed?: boolean;
+  /**
+   * "Internal" for workouts actually performed on the Tonal. Tonal's Apple Health
+   * integration also imports outside activities (runs, rides) into the same feed
+   * as "External" — those have no per-set detail and 404 if you ask for it.
+   */
+  activityType?: string;
+  /** Set once an activity is deleted. Its detail endpoint 404s from then on. */
+  deletedAt?: string | null;
   timestamp?: string;
   localTimestamp?: string;
   timeZone?: string;

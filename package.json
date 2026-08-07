@@ -15,6 +15,7 @@
     "check:hr": "tsx scripts/check-hr.ts",
     "dump:catalog": "tsx scripts/dump-catalog.ts",
     "build:curated": "tsx scripts/build-from-curated.ts",
+    "selftest": "tsx scripts/selftest.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

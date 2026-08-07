@@ -23,7 +23,7 @@
  * public — see CONTRIBUTING.md.
  */
 import 'dotenv/config';
-import { Tonal, activityIdOf } from '../src/tonal.js';
+import { Tonal, activityIdOf, isHttpStatus, isSyncable } from '../src/tonal.js';
 
 function keys(obj: unknown): string[] {
   return obj && typeof obj === 'object' ? Object.keys(obj as object) : [];
@@ -43,7 +43,26 @@ async function main() {
   console.log(`\nFound ${summaries.length} activity summaries.`);
   if (summaries.length === 0) return;
 
-  const summary = (await tonal.getLatestCompletedActivity()) ?? summaries[0];
+  // Activities imported from Apple Health, and deleted ones, have no per-set
+  // detail. Report them so an account full of them explains itself.
+  const unsyncable = summaries.filter((s) => !isSyncable(s));
+  if (unsyncable.length > 0) {
+    const external = unsyncable.filter((s) => s.deletedAt == null).length;
+    console.log(
+      `  (${unsyncable.length} skipped: ${external} external/imported, ` +
+        `${unsyncable.length - external} deleted — these have no per-set detail)`,
+    );
+  }
+
+  const summary = await tonal.getLatestCompletedActivity();
+  if (!summary) {
+    console.log(
+      '\nNo completed *Tonal* workouts found. If the count above is non-zero, every activity on\n' +
+        'this account came from somewhere else (Apple Health import) — there is nothing to sync.',
+    );
+    return;
+  }
+
   console.log('\n--- Newest completed summary ---');
   console.log('summary keys:', keys(summary).join(', '));
   console.log('candidate ids:', {
@@ -54,7 +73,21 @@ async function main() {
 
   const activityId = activityIdOf(summary);
   console.log(`\nFetching detail for activityId=${activityId} ...`);
-  const detail = await tonal.getWorkoutDetail(activityId);
+  let detail;
+  try {
+    detail = await tonal.getWorkoutDetail(activityId);
+  } catch (err) {
+    if (isHttpStatus(err, 404)) {
+      console.log(
+        `\nDetail returned HTTP 404 — this activity has no per-set data.\n` +
+          `That usually means it was deleted, or it came from outside Tonal.\n` +
+          `The sync skips activities like this rather than failing, so it is not fatal.\n` +
+          `If every workout does this, please open an issue.`,
+      );
+      return;
+    }
+    throw err;
+  }
 
   console.log('\n--- Detail ---');
   console.log('detail keys:', keys(detail).join(', '));

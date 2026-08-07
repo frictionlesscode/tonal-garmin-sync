@@ -18,11 +18,11 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run selftest
 
-      # The service talks to two APIs that CI can't reach, so there's nothing to
-      # run end-to-end. What CI can prove is that the image builds and the
-      # bundled movement map is valid — the two things most likely to be broken
-      # by a careless commit.
+      # The service talks to two APIs CI can't reach, so there's no end-to-end
+      # run here. Beyond the offline self-test above, what CI can prove is that
+      # the image builds and the bundled movement map is valid.
       - name: Build the Docker image
         run: docker build -t tonal-garmin-sync:ci .
 
