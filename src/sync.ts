@@ -83,11 +83,36 @@ export class SyncService {
     }
   }
 
+  /**
+   * Drop the cached Tonal client so the next sync attempt logs in fresh.
+   *
+   * ts-tonal-client manages its own session token internally, and its refresh
+   * occasionally fails outright after the client has sat idle for days
+   * ("Token expired and refresh failed. Call authenticate() first.") — with no
+   * way to recover that one client. Without this, every sync after that point
+   * would fail until the process restarted. Movements holds a reference to the
+   * Tonal client, so it has to be dropped too.
+   */
+  private dropTonalClient(): void {
+    this.tonal = undefined;
+    this.movements = undefined;
+  }
+
+  /** Run a Tonal call, discarding the cached client on failure so the next attempt reconnects. */
+  private async callTonal<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      this.dropTonalClient();
+      throw err;
+    }
+  }
+
   private async doSyncRecent(count: number, options: SyncRecentOptions): Promise<SyncResult[]> {
     // A dry run never touches Garmin, so don't demand a token store for it.
     await this.ensureConnected(!options.dryRun);
 
-    const summaries = await this.tonal!.getRecentCompletedActivities(count);
+    const summaries = await this.callTonal(() => this.tonal!.getRecentCompletedActivities(count));
     if (summaries.length === 0) {
       console.log('[sync] no completed Tonal activity found');
       return [{ status: 'no-activity' }];
@@ -112,7 +137,7 @@ export class SyncService {
       return { status: 'skipped', activityId, name: String(summary.name ?? '') };
     }
 
-    const detail = await this.tonal!.getWorkoutDetail(activityId);
+    const detail = await this.callTonal(() => this.tonal!.getWorkoutDetail(activityId));
     const workout = normalizeWorkout(summary, detail, this.movements!, this.config.tonalWeightUnit);
     console.log(
       `[sync] ${workout.name} (${activityId}): ${workout.sets.length} sets, ${workout.totalReps} reps`,

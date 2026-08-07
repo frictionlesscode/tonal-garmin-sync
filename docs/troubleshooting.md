@@ -36,6 +36,17 @@ The `x-webhook-secret` header doesn't match `WEBHOOK_SECRET`. Watch for trailing
 whitespace, mismatched quotes in `secrets.yaml`, and forgetting to restart the
 service after changing `.env`.
 
+### `Token expired and refresh failed. Call authenticate() first.`
+
+The Tonal client's internal session token failed to refresh itself, usually
+after the container has run for several days without a restart. Current
+versions self-heal: the service drops the stale client on this error and logs
+in fresh on the *next* sync attempt, so this fails once and then recovers on
+its own. If you're on an older version, `docker compose restart
+tonal-garmin-sync` clears it immediately. Either way, the workout that
+triggered this error wasn't recorded as synced, so a backfill or the next
+poll/trigger picks it up: `npm run backfill -- 3 --dry` to check.
+
 ### `Garmin token store missing at .../garmin_tokens.json`
 
 The one-time bootstrap hasn't run, or wrote somewhere the service can't read.
