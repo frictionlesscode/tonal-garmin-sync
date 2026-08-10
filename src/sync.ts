@@ -109,6 +109,12 @@ export class SyncService {
    * here means a workout syncs on the trigger that hit the stale token, rather
    * than being silently orphaned until someone runs a backfill.
    *
+   * This is a workaround. Tracked upstream at
+   * https://github.com/dlwiest/ts-tonal-client/issues/6 — once the library
+   * derives expiry from the token's own `exp` claim, the stale-token case
+   * disappears and this retry can go. Keeping it does no harm either way: it
+   * only ever fires on a genuine auth failure.
+   *
    * Only a dead session justifies this: a 404 for one activity says nothing
    * about the login, and retrying those would just double the work.
    */

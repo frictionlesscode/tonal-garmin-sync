@@ -56,6 +56,24 @@ If you'd rather they weren't in your Tonal feed at all: turn off the other app's
 write access in iOS **Health → Sharing → Apps**, and delete the imported entries
 in the Tonal app.
 
+### `HTTP 401: token is expired by [N]m[M]s`, roughly every 10 hours
+
+A known bug in the Tonal client library: it records its token expiry from the
+`expires_in` value returned at login (24 hours), but authenticates with a token
+whose own expiry claim is about 10 hours. After ~10 hours it keeps sending a
+credential Tonal has already rejected.
+
+**Nothing to do — the service handles it.** It logs in again and retries the
+request once, so the workout still syncs. You'll see one line in the log:
+
+```
+[sync] Tonal rejected the session — logging in again and retrying once
+```
+
+You do *not* need the daily container restart that gets suggested for this.
+Tracked upstream at
+[dlwiest/ts-tonal-client#6](https://github.com/dlwiest/ts-tonal-client/issues/6).
+
 ### `Token expired and refresh failed. Call authenticate() first.`
 
 The Tonal client's internal session token failed to refresh itself, usually
