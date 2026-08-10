@@ -101,18 +101,26 @@ export class SyncService {
   }
 
   /**
-   * Run a Tonal call, discarding the cached client only if the *session* died.
+   * Run a Tonal call, re-authenticating and retrying once if the *session* died.
    *
-   * Not every failure means the login is bad: a 404 for one activity says
-   * nothing about the session, and throwing the client away for those would
-   * force a pointless re-login on every skipped activity.
+   * ts-tonal-client trusts the `expires_in` it gets at login (24h) but
+   * authenticates with a bearer token whose own exp claim is ~10h, so after
+   * about ten hours it keeps sending a token Tonal already rejects. Retrying
+   * here means a workout syncs on the trigger that hit the stale token, rather
+   * than being silently orphaned until someone runs a backfill.
+   *
+   * Only a dead session justifies this: a 404 for one activity says nothing
+   * about the login, and retrying those would just double the work.
    */
   private async callTonal<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (err) {
-      if (isAuthFailure(err)) this.dropTonalClient();
-      throw err;
+      if (!isAuthFailure(err)) throw err;
+      console.warn('[sync] Tonal rejected the session — logging in again and retrying once');
+      this.dropTonalClient();
+      await this.ensureConnected(false);
+      return fn(); // the closure re-reads this.tonal, so this uses the new client
     }
   }
 

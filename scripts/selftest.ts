@@ -91,5 +91,45 @@ check(
 );
 
 await fs.rm(dir, { recursive: true, force: true });
+
+console.log('\n== an expired session is retried, not lost ==');
+const dir2 = await fs.mkdtemp(path.join(os.tmpdir(), 'tgs-test-'));
+const svc = new SyncService({
+  tonalEmail: 'x', tonalPassword: 'x', webhookSecret: 'x', port: 0, dataDir: dir2,
+  tonalWeightUnit: 'lb', garminDisplayUnit: 'kg', pollIntervalMinutes: 0, pollLookback: 3,
+});
+await svc.init();
+
+// ts-tonal-client keeps using a bearer token ~14h past its real expiry, so a
+// call can 401 even though the client believes it is logged in.
+const err401 = Object.assign(new Error('HTTP 401: token is expired by 10m0s'), { statusCode: 401 });
+let sessionDead = true;
+let logins = 0;
+const client = Object.assign(Object.create(Tonal.prototype), {
+  getActivitySummaries: async () => feed,
+  getWorkoutDetail: async (id: string) => {
+    if (sessionDead) throw err401;
+    return { name: `detail-${id}`, workoutSetActivity: [{ movementId: 'm1', repCount: 5, baseWeight: 100 }] };
+  },
+});
+const movementsStub = { nameFor: () => 'Exercise', fitFor: () => undefined, load: async () => {} };
+const stubs = svc as unknown as Record<string, unknown>;
+// Stand in for a real login. dropTonalClient() clears both the client and the
+// movement cache that references it, so restore both — same as ensureConnected.
+stubs.ensureConnected = async () => {
+  logins++;
+  if (logins > 1) sessionDead = false;
+  stubs.tonal = client;
+  stubs.movements = movementsStub;
+};
+await (stubs.ensureConnected as () => Promise<void>)();
+logins = 0;
+sessionDead = true;
+
+const retried = await svc.runSyncRecent(1, { dryRun: true });
+check('workout still syncs despite the stale token', retried[0]?.status === 'would-sync', `got ${retried[0]?.status}`);
+check('the retry re-authenticated', logins === 2, `logins=${logins}`);
+await fs.rm(dir2, { recursive: true, force: true });
+
 console.log(failures === 0 ? '\nALL PASS\n' : `\n${failures} FAILURE(S)\n`);
 process.exit(failures === 0 ? 0 : 1);
