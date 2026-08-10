@@ -35,6 +35,13 @@ chmod 600 .env
 chmod 700 data/garmin-tokens
 ```
 
+That directory mode matters more than it looks. `garminconnect` before 0.3.5
+wrote `garmin_tokens.json` using the default umask, leaving it world-readable
+to every local user ([CVE-2026-54447](https://github.com/advisories/GHSA-wjhr-76vg-2hvc),
+CVSS 7.1). This project now pins 0.3.5 or later, so the file is created `600` —
+but a `700` directory blocks that whole class of problem regardless of what the
+library does, which is why the instruction is here rather than left to upstream.
+
 **Never commit secrets.** `.gitignore` already excludes `.env`, `data/` and
 `*.fit`. Before your first push:
 

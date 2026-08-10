@@ -6,7 +6,13 @@
 # Leaving it unpinned means an upstream change can break every user's build at
 # once, with no obvious cause. Bump this on purpose, after testing a real login.
 #
+# 0.3.5 is the security floor: earlier versions wrote garmin_tokens.json with the
+# default umask, leaving it world-readable (CVE-2026-54447, CVSS 7.1). The token
+# store is equivalent to a logged-in Garmin session, so do not pin below 0.3.5.
+# Keeping data/garmin-tokens/ at mode 700 defends against this independently —
+# see SECURITY.md — but the library should not be relying on that.
+#
 # Known-good transitive versions at the time of pinning (installed automatically;
 # listed here so you can reproduce the exact environment if a bump goes wrong):
 #   curl_cffi 0.15.0, cffi 2.0.0, requests 2.34.2
-garminconnect==0.3.2
+garminconnect==0.3.9

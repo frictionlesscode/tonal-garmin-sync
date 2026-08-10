@@ -1,4 +1,8 @@
-FROM node:20-bookworm-slim
+# Trixie, not bookworm, for its Python: garminconnect >= 0.3.3 requires Python
+# 3.12+, and bookworm only offers 3.11 — which would pin us to 0.3.2 and below
+# the security floor in python/requirements.txt. Trixie ships 3.13. Node stays
+# on 20; only the Debian suite changes.
+FROM node:20-trixie-slim
 
 WORKDIR /app
 
@@ -11,7 +15,9 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 python3-venv \
   && rm -rf /var/lib/apt/lists/* \
   && python3 -m venv /opt/garmin-venv \
-  && /opt/garmin-venv/bin/pip install --no-cache-dir --upgrade pip \
+  # setuptools too, not just pip: the version Debian seeds the venv with carries
+  # its own advisories, and it ships in the image whether or not we use it.
+  && /opt/garmin-venv/bin/pip install --no-cache-dir --upgrade pip setuptools \
   && /opt/garmin-venv/bin/pip install --no-cache-dir -r ./python/requirements.txt
 
 # Dependencies first, for layer caching. `npm ci` installs exactly what's in the
