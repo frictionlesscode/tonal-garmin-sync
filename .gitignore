@@ -21,3 +21,6 @@ tonal-movements.json
 # Scratch/local-only scripts.
 scripts/scratch/
 scripts/scratch-check.mjs
+
+# Local Claude Code settings (personal permissions, not shared config).
+.claude/settings.local.json
