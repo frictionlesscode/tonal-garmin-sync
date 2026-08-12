@@ -171,6 +171,20 @@ Movement map additions are especially welcome — the bundled 291 movements cove
 one person's programs. See [CONTRIBUTING.md](CONTRIBUTING.md), and please redact
 your personal workout data from anything you paste into an issue.
 
+## Credits
+
+This project is built on [theengineer1676/tonal-garmin-sync](https://github.com/theengineer1676/tonal-garmin-sync),
+which wrote the core sync engine: the webhook trigger, FIT encoding of
+sets/reps/weight/HR, duplicate-free upload, the 291-exercise movement name
+map, weight-doubling for both-arms-simultaneous movements, ruck load parsing,
+weather capture, the Tonal calorie-fallback logic, and recovery from a stale
+Tonal session.
+
+Since forking, this repo has added [workout genre classification](docs/workout-genre.md)
+(Aero/Pilates/Yoga/Mobility/Meditation/Warm-up/Recovery synced with correct
+FIT `sport`/`subSport` instead of defaulting everything to strength). See
+[CHANGELOG.md](CHANGELOG.md) for the full list of changes going forward.
+
 ## License
 
 [MIT](LICENSE).
