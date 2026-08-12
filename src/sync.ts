@@ -179,10 +179,33 @@ export class SyncService {
     }
 
     const detail = await this.callTonal(() => this.tonal!.getWorkoutDetail(activityId));
-    const workout = normalizeWorkout(summary, detail, this.movements!, this.config.tonalWeightUnit);
+    const workout = normalizeWorkout(
+      summary,
+      detail,
+      this.movements!,
+      this.config.tonalWeightUnit,
+      this.config.calorieFactor,
+    );
     console.log(
       `[sync] ${workout.name} (${activityId}): ${workout.sets.length} sets, ${workout.totalReps} reps`,
     );
+    console.log(
+      `[sync] genre: ${workout.genre} -> ${workout.sport}/${workout.subSport} (${workout.genreReason})`,
+    );
+    if (workout.genre === 'strength' && workout.sendCalories) {
+      if (workout.calorieFactor !== 1 && workout.rawCalories !== undefined) {
+        console.log(
+          `[sync] calories: ${workout.rawCalories} raw x ${workout.calorieFactor} = ` +
+            `${workout.totalCalories} (TONAL_CALORIE_FACTOR)`,
+        );
+      }
+    } else if (workout.sendCalories) {
+      console.log(
+        `[sync] calories: ${workout.calorieToSend} raw, sent (no HR recorded for this session — nothing for Garmin to compute from)`,
+      );
+    } else {
+      console.log(`[sync] calories: not sent (${workout.genre}) — Garmin computes this from HR`);
+    }
 
     if (options.dryRun) {
       return { status: 'would-sync', activityId, name: workout.name, setCount: workout.sets.length };

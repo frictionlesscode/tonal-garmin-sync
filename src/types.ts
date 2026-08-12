@@ -61,6 +61,14 @@ export interface TonalSetActivityLoose {
   duration?: number; // seconds, == endTime - beginTime
   /** "Both" | "Left" | "Right" — used with the movement's two-sided flag */
   movementSide?: string;
+  /**
+   * User-entered label for this set. Only seen populated on Tonal's generic
+   * "Move" placeholders (Handle Move, Bar Move, Ankle Strap Move, ...), which
+   * carry no exercise-specific info of their own — this is what the user
+   * actually typed for the custom exercise, e.g. "seated calf raise". Named
+   * movements normally don't have this field at all.
+   */
+  description?: string;
   [key: string]: unknown;
 }
 
@@ -100,6 +108,13 @@ export interface TonalMovementLoose {
   isTwoSided?: boolean;
   isAlternating?: boolean;
   countReps?: boolean;
+  /**
+   * Machine config for this movement, including whether both of Tonal's arms
+   * pull simultaneously at `baseWeight` each (making the true combined load
+   * 2x baseWeight) versus one arm active at a time (baseWeight already is the
+   * total). See Movements.doublesWeight in movements.ts.
+   */
+  onMachineInfo?: { trainerArmsPulledAtSameTime?: boolean; [key: string]: unknown };
   [key: string]: unknown;
 }
 
@@ -108,6 +123,8 @@ export interface NormalizedSet {
   index: number;
   exerciseName: string;
   movementId?: string;
+  /** Set-level custom label from Tonal, when the movement itself is a generic placeholder. */
+  description?: string;
   reps: number;
   weightKg: number;
   startTime: Date;
@@ -130,5 +147,24 @@ export interface NormalizedWorkout {
   hrSamples: Array<{ time: Date; bpm: number }>;
   avgHr?: number;
   maxHr?: number;
+  /** Tonal's reported figure, unmodified — kept for interpretability alongside totalCalories. */
+  rawCalories?: number;
+  /** Multiplier applied to rawCalories to produce totalCalories. 1 = unmodified. */
+  calorieFactor: number;
   totalCalories?: number;
+  /** strength | aero | pilates | yoga | mobility | meditation | warmup | recovery — see src/genre.ts. */
+  genre: string;
+  /** FIT sport/subSport derived from genre. */
+  sport: string;
+  subSport: string;
+  /**
+   * Strength always sends a calorie figure. Others normally don't (Garmin
+   * computes it from HR) — except when Tonal recorded no HR at all for this
+   * session, in which case this falls back to true so *something* gets sent.
+   */
+  sendCalories: boolean;
+  /** The actual value to write when sendCalories is true — totalCalories for strength, rawCalories otherwise. */
+  calorieToSend?: number;
+  /** Why genre was picked — logged at sync time. */
+  genreReason: string;
 }

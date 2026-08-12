@@ -29,7 +29,36 @@ Tonal has its own catalog, keyed by UUID. The movement map is the bridge:
 | `onMachine` | `false` for bodyweight movements, which log a weight of 0 |
 
 **A movement with no mapping still syncs** — its reps, weight and timing all
-upload correctly. It just shows as "Unknown" instead of a name.
+upload correctly.
+
+If a movement isn't in the map, the service doesn't automatically show it as
+"Unknown" — it first tries a keyword/fuzzy fallback: matching words in Tonal's
+name against FIT's category and exercise vocabulary (e.g. "Calf Raise" ->
+`calfRaise`). This is a best-effort guess, not a lookup — it's logged as
+`[movements] guessed "..." -> category/name — unmapped` (or `(category only,
+no name matched)`, or `no keyword match ... — showing Unknown` when nothing
+matched at all) so you can review it. `npm run inspect:fit` flags guessed rows
+with `<-- GUESSED`, distinct from `<-- UNKNOWN`.
+
+The fallback intentionally stays conservative: it only assigns a category when
+a keyword phrase matches (no guessing between calfRaise/lateralRaise/hipRaise/
+legRaise from a bare "raise", for instance), and only assigns a specific
+exercise name when a candidate shares an actual word with Tonal's name — so a
+bad guess can surface as "right category, generic name" or "still Unknown,"
+never a specific-but-wrong exercise in an unrelated category. If a guess looks
+wrong, add a real entry to `config/curated.json` (below) to override it —
+guesses are never written back to the map file automatically.
+
+**Tonal's own generic movements** ("Handle Move", "Bar Move", "Ankle Strap
+Move", ...) carry no exercise info at all — they're placeholders for a custom
+exercise you built yourself, and the same generic movement is reused across
+totally unrelated exercises. If you gave the set its own label in Tonal (the
+free-text field under the custom exercise, e.g. typing "seated calf raise"),
+the fallback uses *that* instead of the generic movement name — it's the only
+place the real exercise identity exists. This can never be curated in
+`config/curated.json` the normal way, since a curated entry is keyed by
+movement id and a generic movement's id doesn't identify a specific exercise —
+only the per-set label does.
 
 The bundled map covers **291 movements**. Movement UUIDs are global to Tonal's
 catalog rather than per-account, so the map works the same for everyone — and an

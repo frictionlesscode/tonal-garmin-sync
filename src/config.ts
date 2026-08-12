@@ -37,6 +37,13 @@ export interface Config {
   pollIntervalMinutes: number;
   /** How many recent activities a poll examines (catches back-to-back workouts). */
   pollLookback: number;
+  /**
+   * Multiplier applied to Tonal's reported calories before upload. 1 (default)
+   * sends Tonal's figure unmodified. Not derived from anything Tonal or Garmin
+   * publishes — set this only if you have your own reason to trust a different
+   * figure than Tonal's.
+   */
+  calorieFactor: number;
 }
 
 function unit(name: string, fallback: 'lb' | 'kg'): 'lb' | 'kg' {
@@ -52,6 +59,15 @@ function integer(name: string, fallback: number): number {
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) {
     throw new Error(`${name} must be a whole number, got "${raw}"`);
+  }
+  return n;
+}
+
+function positiveFloat(name: string, fallback: number): number {
+  const raw = optional(name, String(fallback));
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`${name} must be a positive number, got "${raw}"`);
   }
   return n;
 }
@@ -79,5 +95,6 @@ export function loadConfig(): Config {
     garminDisplayUnit: unit('GARMIN_DISPLAY_UNIT', 'kg'),
     pollIntervalMinutes,
     pollLookback: Math.max(1, integer('POLL_LOOKBACK', 3)),
+    calorieFactor: positiveFloat('TONAL_CALORIE_FACTOR', 1),
   };
 }

@@ -8,6 +8,7 @@ import type {
   TonalWorkoutDetailLoose,
 } from './types.js';
 import { activityIdOf } from './tonal.js';
+import { classifyGenre } from './genre.js';
 
 const LB_TO_KG = 0.45359237;
 
@@ -37,6 +38,7 @@ export function normalizeWorkout(
   detail: TonalWorkoutDetailLoose,
   movements: Movements,
   weightUnit: 'lb' | 'kg',
+  calorieFactor = 1,
 ): NormalizedWorkout {
   const activityId = activityIdOf(summary);
   const name = String(detail.name ?? summary.name ?? 'Tonal Workout');
@@ -54,14 +56,19 @@ export function normalizeWorkout(
   let cursor = workoutStartFallback.getTime();
   const sets: NormalizedSet[] = rawSets.map((s, i) => {
     const movementId = s.movementId ? String(s.movementId) : undefined;
-    const fit = movements.fitFor(movementId);
+    const description = typeof s.description === 'string' ? s.description : undefined;
+    const fit = movements.fitFor(movementId, description);
     const reps = Math.round(firstNumber(s.repCount, s.repetition, s.prescribedReps));
 
-    // Weight: send Tonal's nominal set weight (baseWeight) as-is — Tonal already
-    // reports it correctly per attachment (handles = per-hand, barbell = combined,
-    // single-cable rope = that cable). Bodyweight movements log 0.
+    // Weight: baseWeight is per-arm, not the total load. When Tonal's own
+    // catalog says both arms pull this movement simultaneously (confirmed
+    // against Tonal's own totalVolume field — see Movements.doublesWeight),
+    // the real combined weight is baseWeight * 2; otherwise baseWeight already
+    // is the total (single arm active — rope, or an alternating movement).
+    // Bodyweight movements log 0.
     let weightRaw = firstNumber(s.baseWeight, s.avgWeight);
     if (fit && fit.onMachine === false) weightRaw = 0;
+    else if (movements.doublesWeight(movementId)) weightRaw *= 2;
 
     // Real per-set timing from Tonal: beginTime/endTime, or the duration field
     // (= time under tension). Fall back to a synthesized slot only if missing.
@@ -76,8 +83,9 @@ export function normalizeWorkout(
 
     return {
       index: i,
-      exerciseName: movements.nameFor(movementId),
+      exerciseName: movements.nameFor(movementId, description),
       movementId,
+      description,
       reps,
       weightKg: toKg(weightRaw, weightUnit),
       startTime: new Date(startMs),
@@ -94,7 +102,8 @@ export function normalizeWorkout(
     .sort((a, b) => a.time.getTime() - b.time.getTime());
   const avgHr = detail.workoutHeartRate?.avgHeartRate;
   const maxHr = detail.workoutHeartRate?.maxHeartRate;
-  const totalCalories = detail.calories?.[0]?.caloriesBurned;
+  const rawCalories = detail.calories?.[0]?.caloriesBurned;
+  const totalCalories = rawCalories !== undefined ? rawCalories * calorieFactor : undefined;
 
   // Workout window spans Tonal's begin/end, or failing that the sets/HR extents.
   const lastSet = sets[sets.length - 1];
@@ -117,15 +126,32 @@ export function normalizeWorkout(
   const totalReps = firstNumber(detail.totalReps, summary.totalReps) || sets.reduce((a, s) => a + s.reps, 0);
   const totalVolumeKg = toKg(firstNumber(detail.totalVolume, summary.totalVolume), weightUnit);
 
+  const { genre, sport, subSport, reason: genreReason } = classifyGenre(name, sets);
+
+  // Strength always gets an explicit calorie figure (with calorieFactor
+  // applied). Other genres deliberately don't, normally — Garmin's own
+  // per-activity-type algorithm computes calories from HR + your profile, and
+  // that's more trustworthy than Tonal's figure for a workout style Tonal's
+  // app doesn't score the same way. But that only works if Tonal actually
+  // recorded HR for this session — it doesn't always (no strap/watch worn).
+  // With zero HR samples there's nothing for Garmin to compute from, so fall
+  // back to Tonal's raw (undiscounted — calorieFactor was calibrated for
+  // strength, not cardio) figure rather than sending no calorie data at all.
+  const sendCalories = genre === 'strength' || hrSamples.length === 0;
+  const calorieToSend = !sendCalories ? undefined : genre === 'strength' ? totalCalories : rawCalories;
+
   return {
     activityId, name, startTime, durationSec: totalDurationSec, totalReps, totalVolumeKg, sets,
-    hrSamples, avgHr, maxHr, totalCalories,
+    hrSamples, avgHr, maxHr, rawCalories, calorieFactor, totalCalories,
+    genre, sport, subSport, sendCalories, calorieToSend, genreReason,
   };
 }
 
 /**
- * Encode a strength-training activity FIT file from a normalized workout.
- * Message order follows the FIT activity-file convention:
+ * Encode an activity FIT file from a normalized workout. sport/subSport come
+ * from workout genre classification (see genre.ts) — usually strengthTraining,
+ * but Aero/Pilates/Yoga/etc. get their own FIT type. Message order follows the
+ * FIT activity-file convention:
  * file_id -> timer start -> set messages -> timer stop -> lap -> session -> activity.
  *
  * `displayUnit` only changes how Garmin Connect *renders* loads. Weights are
@@ -218,13 +244,22 @@ export function encodeFit(workout: NormalizedWorkout, displayUnit: 'lb' | 'kg' =
     eventType: 'stopAll',
   });
 
-  // Garmin Connect doesn't recompute calories for imported activities, so we
-  // send Tonal's figure explicitly (otherwise calories show as 0).
+  // Garmin Connect doesn't recompute calories for an imported strength
+  // activity, so strength sends Tonal's figure explicitly (already has any
+  // configured calorieFactor applied — see normalizeWorkout). Non-strength
+  // genres (cardio, yoga, ...) don't send one at all when HR data exists:
+  // Garmin's own per-activity-type algorithm computes calories from HR + your
+  // profile for those, more trustworthy than anything Tonal reports for a
+  // workout style Tonal's app doesn't score the same way. But if Tonal
+  // recorded no HR for this session, sendCalories/calorieToSend already fall
+  // back to Tonal's raw figure (see normalizeWorkout) so calories aren't just
+  // blank. HR records and avg/max are sent either way — see genre.ts.
   const hr = {
     ...(workout.avgHr ? { avgHeartRate: Math.round(workout.avgHr) } : {}),
     ...(workout.maxHr ? { maxHeartRate: Math.round(workout.maxHr) } : {}),
   };
-  const cals = workout.totalCalories ? { totalCalories: Math.round(workout.totalCalories) } : {};
+  const cals =
+    workout.sendCalories && workout.calorieToSend ? { totalCalories: Math.round(workout.calorieToSend) } : {};
 
   write(Profile.MesgNum.LAP, {
     messageIndex: 0,
@@ -232,8 +267,8 @@ export function encodeFit(workout: NormalizedWorkout, displayUnit: 'lb' | 'kg' =
     startTime: start,
     totalElapsedTime: workout.durationSec,
     totalTimerTime: workout.durationSec,
-    sport: 'training',
-    subSport: 'strengthTraining',
+    sport: workout.sport,
+    subSport: workout.subSport,
     ...hr,
     ...cals,
   });
@@ -244,8 +279,8 @@ export function encodeFit(workout: NormalizedWorkout, displayUnit: 'lb' | 'kg' =
     startTime: start,
     totalElapsedTime: workout.durationSec,
     totalTimerTime: workout.durationSec,
-    sport: 'training',
-    subSport: 'strengthTraining',
+    sport: workout.sport,
+    subSport: workout.subSport,
     firstLapIndex: 0,
     numLaps: 1,
     ...hr,

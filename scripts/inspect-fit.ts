@@ -26,15 +26,23 @@ async function main() {
   const summary = await tonal.getLatestCompletedActivity();
   if (!summary) return console.log('no completed activity');
   const detail = await tonal.getWorkoutDetail(activityIdOf(summary));
-  const wo = normalizeWorkout(summary, detail, movements, cfg.tonalWeightUnit);
+  const wo = normalizeWorkout(summary, detail, movements, cfg.tonalWeightUnit, cfg.calorieFactor);
 
   const bytes = encodeFit(wo, cfg.garminDisplayUnit);
   const { messages, errors } = new Decoder(Stream.fromByteArray(bytes)).read();
   const recordCount = (messages.recordMesgs ?? []).length;
   console.log(`Workout: ${wo.name}  sets=${wo.sets.length}  decodeErrors=${errors.length}`);
+  console.log(`genre: ${wo.genre} -> sport=${wo.sport}/${wo.subSport}  (${wo.genreReason})`);
   console.log(`duration=${Math.round(wo.durationSec)}s  totalReps=${wo.totalReps}`);
+  const caloriesNote = !wo.sendCalories
+    ? 'not sent — Garmin computes this from HR'
+    : wo.genre !== 'strength'
+      ? 'sent — no HR recorded for this session, nothing for Garmin to compute from'
+      : wo.calorieFactor !== 1 && wo.rawCalories !== undefined
+        ? `${wo.rawCalories} raw x ${wo.calorieFactor}`
+        : 'sent';
   console.log(
-    `HR: ${wo.hrSamples.length} samples -> ${recordCount} record msgs | avg=${wo.avgHr} max=${wo.maxHr} | calories=${wo.totalCalories ? Math.round(wo.totalCalories) : '-'} (sent)`,
+    `HR: ${wo.hrSamples.length} samples -> ${recordCount} record msgs | avg=${wo.avgHr} max=${wo.maxHr} | calories=${wo.sendCalories && wo.calorieToSend ? Math.round(wo.calorieToSend) : '-'} (${caloriesNote})`,
   );
   if (wo.sets.length) {
     const first = wo.sets[0].startTime.getTime();
@@ -55,15 +63,16 @@ async function main() {
   console.log();
 
   // Per-exercise rollup from the normalized workout.
-  interface Row { count: number; cat: string; fitName: string; kg: number[]; dur: number[] }
+  interface Row { count: number; cat: string; fitName: string; guessed: boolean; kg: number[]; dur: number[] }
   const rows = new Map<string, Row>();
   for (const s of wo.sets) {
-    const fit = movements.fitFor(s.movementId);
+    const fit = movements.fitFor(s.movementId, s.description);
     const key = s.exerciseName;
     const r = rows.get(key) ?? {
       count: 0,
       cat: s.fitCategory ?? 'UNKNOWN',
       fitName: fit?.exerciseName ?? '-',
+      guessed: fit?.guessed === true,
       kg: [],
       dur: [],
     };
@@ -76,14 +85,15 @@ async function main() {
   const lbl = (a: number[]) => `${Math.min(...a)}-${Math.max(...a)}`;
   console.log('count  TonalName -> fitCategory / fitName  | kg(min-max)  dur(min-max)s');
   for (const [name, r] of [...rows.entries()].sort()) {
-    const flag = r.cat === 'UNKNOWN' ? '  <-- UNKNOWN' : '';
+    const flag = r.cat === 'UNKNOWN' ? '  <-- UNKNOWN' : r.guessed ? '  <-- GUESSED' : '';
     console.log(
       `${String(r.count).padStart(3)}x  ${name} -> ${r.cat} / ${r.fitName} | kg ${lbl(r.kg)}  dur ${lbl(r.dur)}s${flag}`,
     );
   }
 
   const unknown = [...rows.values()].filter((r) => r.cat === 'UNKNOWN').length;
-  console.log(`\n${rows.size} distinct exercises, ${unknown} UNKNOWN`);
+  const guessed = [...rows.values()].filter((r) => r.guessed).length;
+  console.log(`\n${rows.size} distinct exercises, ${unknown} UNKNOWN, ${guessed} GUESSED (unmapped, keyword fallback)`);
 }
 
 main().catch((err) => {

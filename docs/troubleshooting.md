@@ -159,14 +159,25 @@ docker compose exec tonal-garmin-sync npm run check:hr
 
 ### Weights look wrong
 
-Tonal reports weight per attachment already: handles are per-hand, a barbell is
-the combined figure, a single-cable rope is that cable. The service sends that
-figure as-is, which matches what the Tonal app shows you.
+Tonal's `baseWeight` field is **per arm**, not the combined load. When both of
+Tonal's arms pull a movement simultaneously (confirmed against Tonal's own
+`totalVolume` field: `totalVolume == baseWeight * reps * 2` exactly for these),
+the real combined weight is `baseWeight * 2`. When only one arm is active at a
+time (a rope attachment, or an alternating movement), `baseWeight` already is
+the total. The service reads this from Tonal's own catalog
+(`onMachineInfo.trainerArmsPulledAtSameTime` — see `Movements.doublesWeight` in
+`src/movements.ts`) and doubles automatically where it applies, so you
+shouldn't need to do anything here — this section is for if the numbers still
+look off after that.
 
 - **Bodyweight move showing a weight**, or the reverse → the `onMachine` flag,
   see [movement-map.md](movement-map.md#fixing-a-wrong-mapping)
 - **Everything ~2.2× off** → `TONAL_WEIGHT_UNIT` is wrong; it should be `lb`
 - **Right numbers, wrong unit displayed** → set `GARMIN_DISPLAY_UNIT=lb`
+- **A specific exercise still looks exactly 2x off** → the service
+  auto-refreshes `$DATA_DIR/movements-cache.json` the first time it starts
+  after this fix, so this shouldn't linger; if it does, delete that file and
+  restart to force a fresh pull from Tonal's catalog
 
 ### Duplicate activities in Garmin
 

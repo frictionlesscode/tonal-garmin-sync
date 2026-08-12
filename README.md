@@ -104,6 +104,7 @@ docker compose exec tonal-garmin-sync npm run backfill -- 5         # do it
 | [Home Assistant](docs/home-assistant.md) | The Android notification trigger, step by step |
 | [iPhone & polling](docs/iphone.md) | Automatic sync without notifications |
 | [Movement map](docs/movement-map.md) | Fixing or adding exercises that show as "Unknown" |
+| [Workout genre](docs/workout-genre.md) | How Aero/Pilates/Yoga/etc. get classified, and their FIT sport/subSport |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → cause → fix |
 | [Security](SECURITY.md) | What credentials are stored, and how to protect them |
 

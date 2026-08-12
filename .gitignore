@@ -12,3 +12,12 @@ data/
 *.fit
 *.log
 tonal-movements.json
+.cache/
+
+# TLS certs/keys (e.g. Tailscale Funnel) — never commit these.
+*.crt
+*.key
+
+# Scratch/local-only scripts.
+scripts/scratch/
+scripts/scratch-check.mjs

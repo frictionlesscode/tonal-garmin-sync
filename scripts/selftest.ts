@@ -20,6 +20,10 @@ import path from 'node:path';
 import { Tonal, isSyncable, isAuthFailure, isHttpStatus } from '../src/tonal.js';
 import { SyncService } from '../src/sync.js';
 import type { SyncResult } from '../src/sync.js';
+import { classifyGenre } from '../src/genre.js';
+import { normalizeWorkout } from '../src/fit.js';
+import { Movements } from '../src/movements.js';
+import type { NormalizedSet } from '../src/types.js';
 
 let failures = 0;
 const check = (label: string, ok: boolean, extra = ''): void => {
@@ -35,6 +39,84 @@ check('internal activity is syncable', isSyncable({ activityType: 'Internal' }))
 check('external activity is NOT syncable', !isSyncable({ activityType: 'External' }));
 check('deleted activity is NOT syncable', !isSyncable({ deletedAt: '2026-01-01T00:00:00Z' }));
 check('missing activityType is treated as syncable', isSyncable({ name: 'x' }));
+
+console.log('\n== workout genre classification ==');
+const setWith = (fitCategory: string | undefined): NormalizedSet => ({
+  index: 0, exerciseName: 'x', reps: 5, weightKg: 10, startTime: new Date(), durationSec: 30, fitCategory,
+});
+check('name match wins over set composition', classifyGenre('Aero 3.0', [setWith('benchPress')]).genre === 'aero');
+check('pilates name match', classifyGenre('Pilates Flow', []).genre === 'pilates');
+check('yoga name match', classifyGenre('Morning Yoga', []).genre === 'yoga');
+check('strength name has no keyword, falls to default', classifyGenre('Psmf Friday Pull', [setWith('benchPress')]).genre === 'strength');
+check(
+  'cardio-heavy sets fall back to aero when unnamed',
+  classifyGenre('Workout 42', [setWith('bike'), setWith('bike'), setWith('elliptical'), setWith('squat')]).genre === 'aero',
+);
+check(
+  'pose-heavy sets fall back to yoga when unnamed',
+  classifyGenre('Workout 42', [setWith('pose'), setWith('pose'), setWith('pose'), setWith('squat')]).genre === 'yoga',
+);
+check(
+  'a couple cardio sets in an otherwise-strength workout stay strength',
+  classifyGenre('Workout 42', [setWith('bike'), setWith('squat'), setWith('squat'), setWith('benchPress')]).genre === 'strength',
+);
+console.log('\n== calorie fallback when Tonal recorded no HR ==');
+const fakeMovements = new Movements(Object.create(Tonal.prototype) as Tonal, path.join(os.tmpdir(), 'tgs-genre-test'));
+const baseSummary = { id: 'w1', name: 'Aero Test', timestamp: '2026-01-01T00:00:00Z' };
+const detailWithHr = {
+  name: 'Aero Test',
+  workoutSetActivity: [],
+  calories: [{ algorithm: 'Tonal', caloriesBurned: 300 }],
+  beginTime: '2026-01-01T00:00:00Z',
+  endTime: '2026-01-01T00:10:00Z',
+  workoutHeartRate: { workoutHeartRateValues: [{ timestamp: '2026-01-01T00:05:00Z', heartRate: 120 }] },
+};
+const detailNoHr = { ...detailWithHr, workoutHeartRate: undefined };
+const woAeroWithHr = normalizeWorkout(baseSummary, detailWithHr as any, fakeMovements, 'lb', 0.7);
+const woAeroNoHr = normalizeWorkout(baseSummary, detailNoHr as any, fakeMovements, 'lb', 0.7);
+const woStrength = normalizeWorkout({ ...baseSummary, name: 'Leg Day' }, { ...detailWithHr, name: 'Leg Day' } as any, fakeMovements, 'lb', 0.7);
+check('non-strength with HR recorded: no calories sent', woAeroWithHr.sendCalories === false);
+check('non-strength with NO HR recorded: falls back to sending calories', woAeroNoHr.sendCalories === true);
+check('the fallback sends Tonal\'s raw figure, not calorieFactor-discounted', woAeroNoHr.calorieToSend === 300);
+check('strength always sends calories, discounted by calorieFactor', woStrength.sendCalories === true && woStrength.calorieToSend === 210);
+
+console.log('\n== weight doubling for both-arms-simultaneous movements ==');
+// baseWeight is per-arm; Tonal's own totalVolume field confirms the real
+// combined load is 2x baseWeight when both arms pull at once (see fit.ts).
+const doublingMovements = new Movements(Object.create(Tonal.prototype) as Tonal, path.join(os.tmpdir(), 'tgs-weight-test'));
+(doublingMovements as unknown as { armsSameTime: Record<string, boolean> }).armsSameTime = { m1: true, m2: false };
+check('doublesWeight true for a both-arms movement', doublingMovements.doublesWeight('m1') === true);
+check('doublesWeight false for a single-arm movement', doublingMovements.doublesWeight('m2') === false);
+check('doublesWeight false for an unknown movement', doublingMovements.doublesWeight('unknown') === false);
+
+const LB_TO_KG = 0.45359237;
+const detailDoubling = {
+  name: 'Leg Day',
+  workoutSetActivity: [
+    { movementId: 'm1', repCount: 8, baseWeight: 21 }, // both-arms: true combined load is 42
+    { movementId: 'm2', repCount: 10, baseWeight: 56 }, // single-arm: 56 already is the total
+  ],
+  beginTime: '2026-01-01T00:00:00Z',
+  endTime: '2026-01-01T00:10:00Z',
+};
+const woDoubling = normalizeWorkout(
+  { id: 'w2', name: 'Leg Day', timestamp: '2026-01-01T00:00:00Z' },
+  detailDoubling as any,
+  doublingMovements,
+  'lb',
+  1,
+);
+const closeEnough = (a: number, b: number) => Math.abs(a - b) < 0.01;
+check(
+  'both-arms set weight is doubled before unit conversion',
+  closeEnough(woDoubling.sets[0].weightKg, 42 * LB_TO_KG),
+  `got ${woDoubling.sets[0].weightKg}`,
+);
+check(
+  'single-arm set weight is sent as-is',
+  closeEnough(woDoubling.sets[1].weightKg, 56 * LB_TO_KG),
+  `got ${woDoubling.sets[1].weightKg}`,
+);
 
 // Real Tonal instance with only the network call stubbed out.
 const tonal = Object.create(Tonal.prototype) as Tonal;
@@ -65,6 +147,7 @@ const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'tgs-test-'));
 const service = new SyncService({
   tonalEmail: 'x', tonalPassword: 'x', webhookSecret: 'x', port: 0, dataDir: dir,
   tonalWeightUnit: 'lb', garminDisplayUnit: 'kg', pollIntervalMinutes: 0, pollLookback: 3,
+  calorieFactor: 1,
 });
 await service.init();
 
@@ -77,7 +160,12 @@ priv.tonal = Object.assign(Object.create(Tonal.prototype), {
     return { name: `detail-${id}`, workoutSetActivity: [{ movementId: 'm1', repCount: 5, baseWeight: 100 }] };
   },
 });
-priv.movements = { nameFor: () => 'Exercise', fitFor: () => undefined, load: async () => {} };
+priv.movements = {
+  nameFor: () => 'Exercise',
+  fitFor: () => undefined,
+  doublesWeight: () => false,
+  load: async () => {},
+};
 
 const results: SyncResult[] = await service.runSyncRecent(10, { dryRun: true });
 const byId = Object.fromEntries(results.map((r) => [r.activityId, r.status]));
@@ -112,7 +200,12 @@ const client = Object.assign(Object.create(Tonal.prototype), {
     return { name: `detail-${id}`, workoutSetActivity: [{ movementId: 'm1', repCount: 5, baseWeight: 100 }] };
   },
 });
-const movementsStub = { nameFor: () => 'Exercise', fitFor: () => undefined, load: async () => {} };
+const movementsStub = {
+  nameFor: () => 'Exercise',
+  fitFor: () => undefined,
+  doublesWeight: () => false,
+  load: async () => {},
+};
 const stubs = svc as unknown as Record<string, unknown>;
 // Stand in for a real login. dropTonalClient() clears both the client and the
 // movement cache that references it, so restore both — same as ensureConnected.
