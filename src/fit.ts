@@ -193,14 +193,33 @@ export function encodeFit(workout: NormalizedWorkout, displayUnit: 'lb' | 'kg' =
 
   // Warm-up / cool-down detection: Tonal's HR window includes pre-first-set and
   // post-last-set time. Each gap >= 60s becomes a time-based set.
+  //
+  // `firstSetStart`/`lastSetEnd` come from the *individual set's* own beginTime/
+  // endTime, not the overall `start`/`end` window used for session duration — so
+  // a single set with a corrupt Tonal timestamp (seen in the wild: multi-day
+  // gaps) inflates only this synthetic block, not the reported session length.
+  // Reject implausible gaps rather than passing them through as a bogus set.
   const firstSetStart = workout.sets.length ? workout.sets[0].startTime : start;
   const lastSetObj = workout.sets[workout.sets.length - 1];
   const lastSetEnd = lastSetObj
     ? new Date(lastSetObj.startTime.getTime() + lastSetObj.durationSec * 1000)
     : end;
   const MIN_BLOCK_MS = 60_000;
-  const hasWarm = workout.sets.length > 0 && firstSetStart.getTime() - start.getTime() >= MIN_BLOCK_MS;
-  const hasCool = workout.sets.length > 0 && end.getTime() - lastSetEnd.getTime() >= MIN_BLOCK_MS;
+  const MAX_BLOCK_MS = 3 * 60 * 60 * 1000; // 3h — beyond this it's bad set timing, not a real warm-up/cool-down
+  const warmGapMs = firstSetStart.getTime() - start.getTime();
+  const coolGapMs = end.getTime() - lastSetEnd.getTime();
+  const hasWarm = workout.sets.length > 0 && warmGapMs >= MIN_BLOCK_MS && warmGapMs <= MAX_BLOCK_MS;
+  const hasCool = workout.sets.length > 0 && coolGapMs >= MIN_BLOCK_MS && coolGapMs <= MAX_BLOCK_MS;
+  if (workout.sets.length > 0 && warmGapMs > MAX_BLOCK_MS) {
+    console.warn(
+      `[fit] ${workout.activityId}: dropping warm-up block — implausible gap of ${(warmGapMs / 3_600_000).toFixed(1)}h before the first set (likely a corrupt Tonal set timestamp)`,
+    );
+  }
+  if (workout.sets.length > 0 && coolGapMs > MAX_BLOCK_MS) {
+    console.warn(
+      `[fit] ${workout.activityId}: dropping cool-down block — implausible gap of ${(coolGapMs / 3_600_000).toFixed(1)}h after the last set (likely a corrupt Tonal set timestamp)`,
+    );
+  }
   const warmCount = hasWarm ? 1 : 0;
 
   // FIT has a `warmUp` exercise category but no cool-down one, and set_type is

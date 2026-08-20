@@ -192,6 +192,16 @@ Gaps of 60s or more before your first set and after your last become "Warm Up"
 blocks. FIT has no cool-down category, so the trailing one is labelled Warm Up
 too — Garmin distinguishes them by position. This is a FIT limitation.
 
+### Warm Up block shows a multi-hour or multi-day duration
+
+Seen when a set's own `beginTime`/`endTime` from Tonal is corrupt — the bogus
+gap only inflates this synthetic block, not the activity's overall length
+(check `get_activities`/Garmin's total duration: it's normal). The service
+drops any warm-up/cool-down gap over 3 hours rather than writing it, logging
+`[fit] <activityId>: dropping warm-up/cool-down block — implausible gap ...`.
+If you see that line, the real Tonal set data was bad, not this service —
+nothing to fix here.
+
 ---
 
 ## Container problems
